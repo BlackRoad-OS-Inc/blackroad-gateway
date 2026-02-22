@@ -1,0 +1,13 @@
+name = "blackroad-gateway"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+account_id = "848cf0b18d51e0170e0d1537aec3505a"
+
+[vars]
+GATEWAY_VERSION = "0.1.0"
+
+# Secrets (set via: wrangler secret put VARIABLE_NAME)
+# OPENAI_API_KEY
+# ANTHROPIC_API_KEY
+# OLLAMA_URL
+# GATEWAY_AUTH_SECRET
