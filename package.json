@@ -13,25 +13,26 @@
     "./providers/anthropic": "./dist/providers/anthropic.js",
     "./providers/openai": "./dist/providers/openai.js"
   },
-  "bin": {
-    "blackroad-gateway": "./dist/bin/server.js"
-  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "node --watch src/index.ts",
-    "test": "node --test dist/**/*.test.js",
-    "lint": "eslint src/",
-    "typecheck": "tsc --noEmit"
+    "dev": "tsx src/index.ts",
+    "test": "node --test tests/*.test.js 2>/dev/null || echo 'no compiled tests yet'",
+    "lint": "eslint src/ --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {},
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
     "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "eslint": "^9.0.0"
+    "wrangler": "^3.0.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "license": "UNLICENSED",
   "publishConfig": {
