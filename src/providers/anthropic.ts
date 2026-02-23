@@ -1,6 +1,6 @@
 /**
  * Anthropic Claude provider.
- * Requires: BLACKROAD_ANTHROPIC_API_KEY env var (gateway only, never in agents)
+ * API key is passed in via constructor from the CF Worker env (never hardcoded).
  */
 
 export interface AnthropicMessage {
@@ -14,10 +14,9 @@ const API_VERSION = "2023-06-01";
 export class AnthropicProvider {
   private apiKey: string;
 
-  constructor() {
-    const key = process.env.BLACKROAD_ANTHROPIC_API_KEY;
-    if (!key) throw new Error("BLACKROAD_ANTHROPIC_API_KEY not set in gateway environment");
-    this.apiKey = key;
+  constructor(apiKey: string) {
+    if (!apiKey) throw new Error("BLACKROAD_ANTHROPIC_API_KEY not set in gateway environment");
+    this.apiKey = apiKey;
   }
 
   private headers() {
@@ -36,7 +35,7 @@ export class AnthropicProvider {
     // Separate system message if present
     let system: string | undefined;
     const filteredMessages = messages.filter((m) => {
-      if (m.role === "system") {
+      if ((m.role as string) === "system") {
         system = m.content;
         return false;
       }
@@ -44,9 +43,9 @@ export class AnthropicProvider {
     });
 
     const body: Record<string, unknown> = {
-      model: model || "claude-3-5-sonnet-latest",
+      model: model || "claude-3-haiku-20240307",
+      max_tokens: opts.max_tokens ?? 1024,
       messages: filteredMessages,
-      max_tokens: opts.max_tokens ?? 4096,
       temperature: opts.temperature ?? 0.7,
     };
     if (system) body.system = system;
@@ -56,44 +55,24 @@ export class AnthropicProvider {
       headers: this.headers(),
       body: JSON.stringify(body),
     });
-
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Anthropic error ${res.status}: ${err}`);
-    }
-
-    const data = await res.json() as {
-      content: { type: string; text: string }[];
-      usage: { input_tokens: number; output_tokens: number };
-    };
-
-    // Normalize to Ollama-compatible format for consistency
-    return {
-      model,
-      message: {
-        role: "assistant",
-        content: data.content.find((c) => c.type === "text")?.text || "",
-      },
-      prompt_eval_count: data.usage.input_tokens,
-      eval_count: data.usage.output_tokens,
-    };
+    return res.json() as Promise<Record<string, unknown>>;
   }
 
-  async *chatStream(
+  async streamChat(
     model: string,
     messages: AnthropicMessage[],
     opts: { temperature?: number; max_tokens?: number } = {}
-  ): AsyncGenerator<Record<string, unknown>> {
+  ): Promise<ReadableStream<Uint8Array>> {
     let system: string | undefined;
     const filteredMessages = messages.filter((m) => {
-      if (m.role === "system") { system = m.content; return false; }
+      if ((m.role as string) === "system") { system = m.content; return false; }
       return true;
     });
 
     const body: Record<string, unknown> = {
-      model: model || "claude-3-5-sonnet-latest",
+      model: model || "claude-3-haiku-20240307",
+      max_tokens: opts.max_tokens ?? 1024,
       messages: filteredMessages,
-      max_tokens: opts.max_tokens ?? 4096,
       temperature: opts.temperature ?? 0.7,
       stream: true,
     };
@@ -105,36 +84,7 @@ export class AnthropicProvider {
       body: JSON.stringify(body),
     });
 
-    if (!res.ok) throw new Error(`Anthropic stream error: ${res.status}`);
-    if (!res.body) throw new Error("No response body");
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const text = decoder.decode(value);
-      for (const line of text.split("\n")) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6);
-        if (data === "[DONE]") return;
-        try {
-          const parsed = JSON.parse(data) as {
-            type: string;
-            delta?: { text?: string };
-          };
-          if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-            yield {
-              message: { role: "assistant", content: parsed.delta.text },
-              done: false,
-            };
-          }
-        } catch {
-          // skip
-        }
-      }
-    }
+    if (!res.body) throw new Error("No response body from Anthropic");
+    return res.body;
   }
 }
