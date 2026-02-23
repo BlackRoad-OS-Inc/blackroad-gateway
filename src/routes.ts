@@ -149,7 +149,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   if (url.pathname === "/memory" && request.method === "POST") {
     const { key, value, truth_state = 0 } = await request.json() as { key: string; value: unknown; truth_state?: 1|0|-1 };
     const entry = await memoryWrite(key, value, truth_state);
-    await logAuditEntry("memory.write", { agent: null, model: null, status: 201, latency_ms: Date.now()-start, kv: env.AUDIT_LOG });
+    await logAuditEntry("memory.write", { agent: undefined, model: undefined, status: 201, latency_ms: Date.now()-start, kv: env.AUDIT_LOG as KVNamespace | undefined });
     return Response.json(entry, { status: 201, headers: cors });
   }
   if (url.pathname.startsWith("/memory/") && request.method === "GET") {
