@@ -1,0 +1,35 @@
+name = "blackroad-ai-gateway"
+main = "blackroad-cf-ai-gateway.js"
+compatibility_date = "2024-01-01"
+account_id = "848cf0b18d51e0170e0d1537aec3505a"
+
+# Enable Cloudflare AI
+[ai]
+binding = "AI"
+
+# KV for caching/state
+[[kv_namespaces]]
+binding = "KV"
+id = "57e48a017d4248a39df32661c3377908"
+
+# Routes
+routes = [
+  { pattern = "ai.blackroad.io/*", zone_name = "blackroad.io" },
+  { pattern = "gateway.blackroad.io/*", zone_name = "blackroad.io" }
+]
+
+# Environment variables
+[vars]
+BLACKROAD_VERSION = "1.0.0"
+BLACKROAD_ENV = "production"
+
+# Production environment
+[env.production]
+name = "blackroad-ai-gateway"
+routes = [
+  { pattern = "ai.blackroad.io/*", zone_name = "blackroad.io" }
+]
+
+# Development environment
+[env.dev]
+name = "blackroad-ai-gateway-dev"
