@@ -13,8 +13,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: {node-version: '20', cache: 'npm'}
-      - run: npm ci --quiet
+        with: {node-version: '20', }
+      - run: npm install --quiet
       - name: TypeScript type check
         run: npx tsc --noEmit 2>/dev/null || echo "Type check complete"
         continue-on-error: true
