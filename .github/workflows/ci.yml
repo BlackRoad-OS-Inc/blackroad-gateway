@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     name: Gateway Tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, arm64, blackroad]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,7 +30,7 @@ jobs:
 
   security:
     name: Security Scan
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, arm64, blackroad]
     steps:
       - uses: actions/checkout@v4
       - name: No hardcoded tokens
@@ -51,7 +51,7 @@ jobs:
 
   wrangler-check:
     name: Cloudflare Worker Check
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, arm64, blackroad]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
