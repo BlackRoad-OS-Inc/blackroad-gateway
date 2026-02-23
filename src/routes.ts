@@ -1,127 +1,92 @@
 /**
- * BlackRoad Gateway — Route Handler
- *
- * All AI provider calls are proxied through here.
- * Agents NEVER hold API keys — this is the trust boundary.
- *
- * Env vars (gateway only):
- *   BLACKROAD_ANTHROPIC_API_KEY
- *   BLACKROAD_OPENAI_API_KEY
- *   BLACKROAD_OLLAMA_URL (default: http://localhost:11434)
+ * BlackRoad Gateway — HTTP Routes
+ * Registers all route handlers on the Hono/fetch-based router.
  */
+import { logAuditEntry } from "./audit.js";
+import { memoryWrite, memoryRead, memoryList, memoryErase } from "./storage.js";
+import { checkRateLimit, rateLimitHeaders } from "./ratelimit.js";
 
-import { Router } from "./router";
-import { AnthropicProvider } from "./providers/anthropic";
-import { OpenAIProvider } from "./providers/openai";
-import { OllamaProvider } from "./providers/ollama";
-import { AuditLog } from "./audit";
-import { RateLimiter } from "./ratelimit";
-
-const router = new Router();
-const audit = new AuditLog();
-const limiter = new RateLimiter({ maxRequests: 100, windowMs: 60_000 });
-
-// ── Provider routing ──────────────────────────────────────────────────────────
-
-function selectProvider(model: string) {
-  if (model.startsWith("claude")) return new AnthropicProvider();
-  if (model.startsWith("gpt") || model.startsWith("o1") || model.startsWith("o3"))
-    return new OpenAIProvider();
-  // Default: Ollama (local)
-  return new OllamaProvider(process.env.BLACKROAD_OLLAMA_URL || "http://localhost:11434");
+export interface Env {
+  BLACKROAD_ANTHROPIC_API_KEY?: string;
+  BLACKROAD_OPENAI_API_KEY?: string;
+  BLACKROAD_OLLAMA_URL?: string;
+  CACHE?: KVNamespace;
+  AUDIT_LOG?: KVNamespace;
 }
 
-// ── Health ────────────────────────────────────────────────────────────────────
+export async function handleRequest(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const start = Date.now();
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  };
 
-router.get("/health", async (_req, res) => {
-  const ollama = new OllamaProvider(process.env.BLACKROAD_OLLAMA_URL || "http://localhost:11434");
-  const ollamaOk = await ollama.health().catch(() => false);
+  if (request.method === "OPTIONS") return new Response(null, { headers: cors });
 
-  res.json({
-    status: "ok",
-    version: process.env.npm_package_version || "1.0.0",
-    providers: {
-      anthropic: !!process.env.BLACKROAD_ANTHROPIC_API_KEY,
-      openai: !!process.env.BLACKROAD_OPENAI_API_KEY,
-      ollama: ollamaOk,
-    },
-    timestamp: new Date().toISOString(),
-  });
-});
+  // Rate limiting
+  const routeKey = url.pathname.startsWith("/v1/chat") ? "chat"
+    : url.pathname.startsWith("/memory") ? "memory"
+    : url.pathname.startsWith("/agents") ? "agents" : "global";
 
-// ── Chat ──────────────────────────────────────────────────────────────────────
-
-router.post("/chat", async (req, res) => {
-  const { model = "qwen2.5:7b", messages, stream = false, options = {} } = req.body;
-
-  // Rate limit
-  const clientId = req.headers["x-agent-id"] || req.ip;
-  if (!limiter.allow(clientId)) {
-    return res.status(429).json({ error: "rate_limited", retry_after: 60 });
+  const rl = await checkRateLimit(ip, routeKey, env.CACHE);
+  if (!rl.allowed) {
+    return Response.json({ error: "Rate limit exceeded" }, {
+      status: 429,
+      headers: { ...cors, ...rateLimitHeaders(rl) }
+    });
   }
 
-  // Audit
-  await audit.log({
-    event: "chat",
-    agent_id: clientId,
-    model,
-    message_count: messages?.length || 0,
-    stream,
-  });
-
-  const provider = selectProvider(model);
-
-  try {
-    if (stream) {
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("X-Accel-Buffering", "no");
-
-      for await (const chunk of provider.chatStream(model, messages, options)) {
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
-      res.write("data: [DONE]\n\n");
-      res.end();
-    } else {
-      const result = await provider.chat(model, messages, options);
-      res.json(result);
-    }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "provider_error";
-    await audit.log({ event: "chat_error", error: message, model });
-    res.status(502).json({ error: "provider_error", message });
+  // ── Health ──────────────────────────────────────
+  if (url.pathname === "/health") {
+    return Response.json({
+      status: "ok", version: "0.1.0",
+      providers: [
+        env.BLACKROAD_OLLAMA_URL ? "ollama" : null,
+        env.BLACKROAD_ANTHROPIC_API_KEY ? "anthropic" : null,
+        env.BLACKROAD_OPENAI_API_KEY ? "openai" : null,
+      ].filter(Boolean),
+      timestamp: new Date().toISOString(),
+    }, { headers: cors });
   }
-});
 
-// ── Generate (Ollama compat) ──────────────────────────────────────────────────
+  // ── Memory ──────────────────────────────────────
+  if (url.pathname === "/memory" && request.method === "GET") {
+    const entries = await memoryList();
+    return Response.json({ entries, count: entries.length }, { headers: { ...cors, ...rateLimitHeaders(rl) } });
+  }
+  if (url.pathname === "/memory" && request.method === "POST") {
+    const { key, value, truth_state = 0 } = await request.json() as { key: string; value: unknown; truth_state?: 1|0|-1 };
+    const entry = await memoryWrite(key, value, truth_state);
+    await logAuditEntry("memory.write", { agent: null, model: null, status: 201, latency_ms: Date.now()-start, kv: env.AUDIT_LOG });
+    return Response.json(entry, { status: 201, headers: cors });
+  }
+  if (url.pathname.startsWith("/memory/") && request.method === "GET") {
+    const key = decodeURIComponent(url.pathname.slice(8));
+    const entry = await memoryRead(key);
+    if (!entry) return Response.json({ error: "Not found" }, { status: 404, headers: cors });
+    return Response.json(entry, { headers: cors });
+  }
+  if (url.pathname.startsWith("/memory/") && request.method === "DELETE") {
+    const key = decodeURIComponent(url.pathname.slice(8));
+    const ok = await memoryErase(key);
+    return Response.json({ erased: ok }, { status: ok ? 200 : 404, headers: cors });
+  }
 
-router.post("/generate", async (req, res) => {
-  const { model = "qwen2.5:7b", prompt, stream = false } = req.body;
-  const provider = new OllamaProvider(process.env.BLACKROAD_OLLAMA_URL || "http://localhost:11434");
+  // ── Agents ──────────────────────────────────────
+  if (url.pathname === "/agents" && request.method === "GET") {
+    const agents = [
+      { id: "lucidia", name: "LUCIDIA", type: "logic",    status: "active", model: "llama3.2" },
+      { id: "alice",   name: "ALICE",   type: "gateway",  status: "active", model: "llama3.2" },
+      { id: "octavia", name: "OCTAVIA", type: "compute",  status: "active", model: "qwen2.5:7b" },
+      { id: "prism",   name: "PRISM",   type: "vision",   status: "idle",   model: "llama3.2" },
+      { id: "echo",    name: "ECHO",    type: "memory",   status: "active", model: "llama3.2" },
+      { id: "cipher",  name: "CIPHER",  type: "security", status: "active", model: "llama3.2" },
+    ];
+    return Response.json({ agents, count: agents.length }, { headers: cors });
+  }
 
-  await audit.log({ event: "generate", model, prompt_length: prompt?.length || 0 });
-
-  const result = await provider.generate(model, prompt, { stream });
-  res.json(result);
-});
-
-// ── Models ────────────────────────────────────────────────────────────────────
-
-router.get("/models", async (_req, res) => {
-  const ollama = new OllamaProvider(process.env.BLACKROAD_OLLAMA_URL || "http://localhost:11434");
-  const models = await ollama.listModels().catch(() => []);
-
-  res.json({
-    models,
-    providers: {
-      anthropic: !!process.env.BLACKROAD_ANTHROPIC_API_KEY
-        ? ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"]
-        : [],
-      openai: !!process.env.BLACKROAD_OPENAI_API_KEY
-        ? ["gpt-4o", "gpt-4o-mini", "o3-mini"]
-        : [],
-      ollama: models,
-    },
-  });
-});
-
-export default router;
+  return Response.json({ error: "Not found" }, { status: 404, headers: cors });
+}
