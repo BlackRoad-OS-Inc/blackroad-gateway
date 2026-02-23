@@ -1,0 +1,45 @@
+{
+  "name": "@blackroad/gateway",
+  "version": "1.0.0",
+  "description": "BlackRoad OS tokenless AI gateway",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./providers/ollama": "./dist/providers/ollama.js",
+    "./providers/anthropic": "./dist/providers/anthropic.js",
+    "./providers/openai": "./dist/providers/openai.js"
+  },
+  "bin": {
+    "blackroad-gateway": "./dist/bin/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "node --watch src/index.ts",
+    "test": "node --test dist/**/*.test.js",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "eslint": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BlackRoad-OS-Inc/blackroad-gateway.git"
+  }
+}
