@@ -1,92 +1,102 @@
 /**
- * Audit log — append-only record of all gateway activity.
- * Written to ~/.blackroad/gateway-audit.jsonl
+ * BlackRoad Gateway — Audit Logger
+ * Append-only PS-SHA∞ audit log for all gateway operations.
+ * Stores in Cloudflare KV or falls back to in-memory ring buffer.
  */
 
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
-import { createHash } from "crypto";
-
-interface AuditEntry {
-  event: string;
-  timestamp: string;
+export interface AuditEntry {
+  id: string;
   hash: string;
   prev_hash: string;
-  [key: string]: unknown;
+  timestamp: string;
+  timestamp_ns: number;
+  action: string;
+  agent: string | null;
+  model: string | null;
+  status: number;
+  latency_ms: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  error?: string;
 }
 
-const AUDIT_FILE = path.join(os.homedir(), ".blackroad", "gateway-audit.jsonl");
+const MAX_MEMORY_ENTRIES = 1000;
+const memoryLog: AuditEntry[] = [];
+let prevHash = "GENESIS";
 
-export class AuditLog {
-  private prevHash = "GENESIS";
+async function sha256(data: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
 
-  constructor() {
-    const dir = path.dirname(AUDIT_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+export async function logAuditEntry(
+  action: string,
+  opts: {
+    agent?: string;
+    model?: string;
+    status?: number;
+    latency_ms?: number;
+    input_tokens?: number;
+    output_tokens?: number;
+    error?: string;
+    kv?: KVNamespace;
+  } = {}
+): Promise<AuditEntry> {
+  const ts_ns = Date.now() * 1_000_000;
+  const content = JSON.stringify({ action, agent: opts.agent, model: opts.model, status: opts.status });
+  const hash = await sha256(`${prevHash}:${content}:${ts_ns}`);
 
-    // Read last hash from existing log
-    if (fs.existsSync(AUDIT_FILE)) {
-      const lines = fs
-        .readFileSync(AUDIT_FILE, "utf-8")
-        .trim()
-        .split("\n")
-        .filter(Boolean);
-      if (lines.length > 0) {
-        try {
-          const last = JSON.parse(lines[lines.length - 1]) as AuditEntry;
-          this.prevHash = last.hash || "GENESIS";
-        } catch {
-          // corrupted last line, continue
-        }
-      }
+  const entry: AuditEntry = {
+    id: `audit_${ts_ns}`,
+    hash,
+    prev_hash: prevHash,
+    timestamp: new Date().toISOString(),
+    timestamp_ns: ts_ns,
+    action,
+    agent: opts.agent ?? null,
+    model: opts.model ?? null,
+    status: opts.status ?? 200,
+    latency_ms: opts.latency_ms ?? 0,
+    input_tokens: opts.input_tokens,
+    output_tokens: opts.output_tokens,
+    error: opts.error,
+  };
+
+  prevHash = hash;
+
+  // Store in KV if available
+  if (opts.kv) {
+    await opts.kv.put(`audit:${entry.id}`, JSON.stringify(entry), { expirationTtl: 86400 * 30 });
+    // Update latest pointer
+    await opts.kv.put("audit:latest", entry.id);
+  }
+
+  // Always keep in memory ring buffer
+  memoryLog.push(entry);
+  if (memoryLog.length > MAX_MEMORY_ENTRIES) memoryLog.shift();
+
+  return entry;
+}
+
+export async function getRecentAuditLog(limit = 50, kv?: KVNamespace): Promise<AuditEntry[]> {
+  if (kv) {
+    // Try to read from KV
+    const latest = await kv.get("audit:latest");
+    if (latest) {
+      // Walk the chain backwards — simplified: just return memory log for now
+      return memoryLog.slice(-limit);
     }
   }
+  return memoryLog.slice(-limit);
+}
 
-  async log(data: Record<string, unknown>): Promise<AuditEntry> {
-    const timestamp = new Date().toISOString();
-    const content = JSON.stringify({ ...data, timestamp });
-
-    const hash = createHash("sha256")
-      .update(`${this.prevHash}:${content}:${Date.now()}`)
-      .digest("hex");
-
-    const entry: AuditEntry = {
-      ...data,
-      timestamp,
-      hash,
-      prev_hash: this.prevHash,
-    };
-
-    fs.appendFileSync(AUDIT_FILE, JSON.stringify(entry) + "\n");
-    this.prevHash = hash;
-
-    return entry;
+export async function verifyAuditChain(entries: AuditEntry[]): Promise<boolean> {
+  let ph = "GENESIS";
+  for (const e of entries) {
+    const content = JSON.stringify({ action: e.action, agent: e.agent, model: e.model, status: e.status });
+    const expected = await sha256(`${ph}:${content}:${e.timestamp_ns}`);
+    if (expected !== e.hash) return false;
+    ph = e.hash;
   }
-
-  async verify(): Promise<{ valid: boolean; total: number; first_invalid?: string }> {
-    if (!fs.existsSync(AUDIT_FILE)) return { valid: true, total: 0 };
-
-    const lines = fs
-      .readFileSync(AUDIT_FILE, "utf-8")
-      .trim()
-      .split("\n")
-      .filter(Boolean);
-
-    let prevHash = "GENESIS";
-
-    for (let i = 0; i < lines.length; i++) {
-      try {
-        const entry = JSON.parse(lines[i]) as AuditEntry;
-        if (entry.prev_hash !== prevHash) {
-          return { valid: false, total: lines.length, first_invalid: entry.hash };
-        }
-        prevHash = entry.hash;
-      } catch {
-        return { valid: false, total: lines.length, first_invalid: `line_${i}` };
-      }
-    }
-
-    return { valid: true, total: lines.length };
-  }
+  return true;
 }
