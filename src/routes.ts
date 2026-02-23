@@ -10,8 +10,84 @@ export interface Env {
   BLACKROAD_ANTHROPIC_API_KEY?: string;
   BLACKROAD_OPENAI_API_KEY?: string;
   BLACKROAD_OLLAMA_URL?: string;
+  GATEWAY_AUTH_SECRET?: string;   // shared secret for HMAC-SHA256 JWT signing
   CACHE?: KVNamespace;
   AUDIT_LOG?: KVNamespace;
+}
+
+// ── Auth helpers ─────────────────────────────────────────────────────────────
+
+/** Public routes that don't require authentication. */
+const PUBLIC_PATHS = new Set(["/health", "/ready", "/openapi.json"]);
+
+/**
+ * Verify a HS256 JWT using the Web Crypto API (available in CF Workers).
+ * Returns the decoded payload or null if invalid/expired.
+ */
+async function verifyJWT(
+  token: string,
+  secret: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const [headerB64, payloadB64, sigB64] = parts;
+
+    // Import signing key
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw", enc.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false, ["verify"],
+    );
+
+    // Verify signature
+    const data = enc.encode(`${headerB64}.${payloadB64}`);
+    const sig = Uint8Array.from(atob(sigB64.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+    const valid = await crypto.subtle.verify("HMAC", key, sig, data);
+    if (!valid) return null;
+
+    // Decode payload
+    const payload = JSON.parse(atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/")));
+    // Check expiry
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract and verify the Bearer token from the Authorization header.
+ * Returns the payload if valid, or a 401 Response if not.
+ */
+async function requireAuth(
+  request: Request,
+  env: Env,
+  cors: Record<string, string>,
+): Promise<Record<string, unknown> | Response> {
+  // No secret configured → warn but allow (dev mode)
+  if (!env.GATEWAY_AUTH_SECRET) {
+    return { sub: "anonymous", role: "admin", dev: true };
+  }
+
+  const authHeader = request.headers.get("Authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) {
+    return Response.json(
+      { error: "unauthorized", message: "Missing Authorization: Bearer <token>" },
+      { status: 401, headers: cors },
+    );
+  }
+
+  const payload = await verifyJWT(token, env.GATEWAY_AUTH_SECRET);
+  if (!payload) {
+    return Response.json(
+      { error: "unauthorized", message: "Invalid or expired token" },
+      { status: 401, headers: cors },
+    );
+  }
+  return payload;
 }
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
@@ -37,6 +113,19 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       status: 429,
       headers: { ...cors, ...rateLimitHeaders(rl) }
     });
+  }
+
+  // ── Authentication ──────────────────────────────
+  let authPayload: Record<string, unknown> = {};
+  if (!PUBLIC_PATHS.has(url.pathname)) {
+    const result = await requireAuth(request, env, cors);
+    if (result instanceof Response) return result;
+    authPayload = result;
+  }
+
+  // ── Ready ────────────────────────────────────────
+  if (url.pathname === "/ready") {
+    return Response.json({ status: "ready", timestamp: new Date().toISOString() }, { headers: cors });
   }
 
   // ── Health ──────────────────────────────────────

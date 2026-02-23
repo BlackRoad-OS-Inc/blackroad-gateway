@@ -1,13 +1,33 @@
 name = "blackroad-gateway"
-main = "src/index.ts"
+main = "src/worker.ts"
 compatibility_date = "2024-12-01"
 account_id = "848cf0b18d51e0170e0d1537aec3505a"
 
 [vars]
 GATEWAY_VERSION = "0.1.0"
+GATEWAY_ENV = "production"
+
+# Routes — custom domain
+[[routes]]
+pattern = "gateway.blackroad.ai/*"
+zone_name = "blackroad.ai"
+
+# KV for rate limiting + caching
+[[kv_namespaces]]
+binding = "CACHE"
+id = "TO_BE_CREATED"
+preview_id = "TO_BE_CREATED"
+
+[[kv_namespaces]]
+binding = "AUDIT_LOG"
+id = "TO_BE_CREATED"
+preview_id = "TO_BE_CREATED"
 
 # Secrets (set via: wrangler secret put VARIABLE_NAME)
-# OPENAI_API_KEY
-# ANTHROPIC_API_KEY
-# OLLAMA_URL
-# GATEWAY_AUTH_SECRET
+# wrangler secret put GATEWAY_AUTH_SECRET
+# wrangler secret put BLACKROAD_OPENAI_API_KEY
+# wrangler secret put BLACKROAD_ANTHROPIC_API_KEY
+# wrangler secret put BLACKROAD_OLLAMA_URL
+
+[env.staging]
+name = "blackroad-gateway-staging"
