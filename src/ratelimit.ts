@@ -1,51 +1,67 @@
 /**
- * Simple in-memory rate limiter for gateway requests.
+ * BlackRoad Gateway — Rate Limiter
+ * Per-IP + per-agent sliding window rate limiting using CF Durable Objects / KV.
  */
 
-interface Window {
-  count: number;
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
   resetAt: number;
+  retryAfter?: number;
 }
 
-export class RateLimiter {
-  private windows = new Map<string, Window>();
+interface WindowConfig {
+  limit: number;
+  windowSeconds: number;
+}
 
-  constructor(
-    private opts: { maxRequests: number; windowMs: number } = {
-      maxRequests: 100,
-      windowMs: 60_000,
-    }
-  ) {}
+const DEFAULT_WINDOWS: Record<string, WindowConfig> = {
+  global:    { limit: 200, windowSeconds: 60 },
+  chat:      { limit: 60,  windowSeconds: 60 },
+  memory:    { limit: 120, windowSeconds: 60 },
+  agents:    { limit: 30,  windowSeconds: 60 },
+};
 
-  allow(clientId: string): boolean {
-    const now = Date.now();
-    const win = this.windows.get(clientId);
+export async function checkRateLimit(
+  ip: string,
+  route: string,
+  kv?: KVNamespace
+): Promise<RateLimitResult> {
+  const config = DEFAULT_WINDOWS[route] ?? DEFAULT_WINDOWS.global;
+  const windowMs = config.windowSeconds * 1000;
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+  const windowEnd = windowStart + windowMs;
+  const key = `rl:${ip}:${route}:${windowStart}`;
 
-    if (!win || now >= win.resetAt) {
-      this.windows.set(clientId, {
-        count: 1,
-        resetAt: now + this.opts.windowMs,
-      });
-      return true;
-    }
-
-    if (win.count >= this.opts.maxRequests) return false;
-
-    win.count++;
-    return true;
+  // In-memory fallback (for when KV isn't available)
+  if (!kv) {
+    return { allowed: true, remaining: config.limit - 1, resetAt: windowEnd };
   }
 
-  remaining(clientId: string): number {
-    const win = this.windows.get(clientId);
-    if (!win || Date.now() >= win.resetAt) return this.opts.maxRequests;
-    return Math.max(0, this.opts.maxRequests - win.count);
+  const raw = await kv.get(key);
+  const count = raw ? parseInt(raw, 10) : 0;
+
+  if (count >= config.limit) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: windowEnd,
+      retryAfter: Math.ceil((windowEnd - now) / 1000),
+    };
   }
 
-  /** Clean up expired windows (call periodically) */
-  prune(): void {
-    const now = Date.now();
-    for (const [id, win] of this.windows) {
-      if (now >= win.resetAt) this.windows.delete(id);
-    }
+  await kv.put(key, String(count + 1), { expirationTtl: config.windowSeconds + 5 });
+  return { allowed: true, remaining: config.limit - count - 1, resetAt: windowEnd };
+}
+
+export function rateLimitHeaders(result: RateLimitResult): Record<string, string> {
+  const headers: Record<string, string> = {
+    "X-RateLimit-Remaining": String(result.remaining),
+    "X-RateLimit-Reset": String(Math.ceil(result.resetAt / 1000)),
+  };
+  if (result.retryAfter !== undefined) {
+    headers["Retry-After"] = String(result.retryAfter);
   }
+  return headers;
 }
