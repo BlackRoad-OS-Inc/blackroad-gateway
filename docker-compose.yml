@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  gateway:
+    image: ghcr.io/blackroad-os-inc/blackroad-gateway:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blackroad-gateway
+    ports:
+      - "127.0.0.1:8787:8787"  # Bind to localhost only — agents connect locally
+    environment:
+      NODE_ENV: production
+      BLACKROAD_GATEWAY_BIND: "0.0.0.0"
+      BLACKROAD_GATEWAY_PORT: "8787"
+      # Provider keys — inject via .env file or secrets manager, NEVER commit
+      BLACKROAD_ANTHROPIC_API_KEY: ${BLACKROAD_ANTHROPIC_API_KEY}
+      BLACKROAD_OPENAI_API_KEY: ${BLACKROAD_OPENAI_API_KEY}
+      BLACKROAD_OLLAMA_URL: ${BLACKROAD_OLLAMA_URL:-http://ollama:11434}
+      AUDIT_LOG: /var/blackroad/audit/gateway-audit.jsonl
+    volumes:
+      - gateway-audit:/var/blackroad/audit
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8787/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - blackroad
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: blackroad-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - blackroad
+    # Uncomment for GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  gateway-audit:
+  ollama-models:
+
+networks:
+  blackroad:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
