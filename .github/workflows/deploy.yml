@@ -15,7 +15,7 @@ on:
 jobs:
   detect:
     name: Detect & Deploy
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, blackroad-fleet]
     steps:
       - uses: actions/checkout@v4
 
