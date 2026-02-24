@@ -17,7 +17,7 @@ on:
 
 jobs:
   sync-to-hub:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, blackroad-fleet]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,7 +74,7 @@ jobs:
           PYEOF
 
   create-space:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, blackroad-fleet]
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
