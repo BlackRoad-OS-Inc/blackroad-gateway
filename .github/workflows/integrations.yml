@@ -14,7 +14,7 @@ on:
 
 jobs:
   notify-slack:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, blackroad-fleet]
     if: github.event_name == 'release' || inputs.service == 'all' || inputs.service == 'slack'
     steps:
       - name: Notify Slack on release
@@ -41,7 +41,7 @@ jobs:
           echo "✓ Slack notified"
 
   create-linear-release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, blackroad-fleet]
     if: github.event_name == 'release' || inputs.service == 'linear'
     steps:
       - name: Create Linear release milestone
@@ -60,7 +60,7 @@ jobs:
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('✓ Linear milestone:', d.get('data',{}).get('milestoneCreate',{}).get('milestone',{}).get('name','?'))"
 
   update-sentry-release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, blackroad-fleet]
     if: github.event_name == 'release' || inputs.service == 'sentry'
     steps:
       - uses: actions/checkout@v4
