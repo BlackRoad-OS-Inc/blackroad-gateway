@@ -1,12 +1,5 @@
-# CODEOWNERS — BlackRoad OS, Inc.
-# Global owners
+# BlackRoad OS Inc — CODEOWNERS
+# All changes require review from org owner
+# © BlackRoad OS, Inc.
+
 * @blackboxprogramming
-
-# Gateway (core trust boundary)
-/src/              @blackboxprogramming
-/.github/workflows/ @blackboxprogramming
-
-# Security files — Security team required
-/security/         @blackboxprogramming
-/policies/         @blackboxprogramming
-*.key              @blackboxprogramming
