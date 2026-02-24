@@ -13,7 +13,7 @@ on:
 
 jobs:
   sync-to-notion:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, blackroad-fleet]
     steps:
       - uses: actions/checkout@v4
 
@@ -84,7 +84,7 @@ jobs:
           PYEOF
 
   sync-changelog:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, blackroad-fleet]
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
