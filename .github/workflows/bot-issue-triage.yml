@@ -13,7 +13,7 @@ permissions:
 jobs:
   triage:
     name: Auto Triage
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, blackroad-fleet]
     steps:
       - name: Auto-label issues
         uses: actions/github-script@v7
