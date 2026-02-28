@@ -45,5 +45,13 @@ chore: bump dependencies
 
 Reach out via GitHub Issues or `blackroad.systems@gmail.com`
 
+### Where to File Issues
+
+| Topic | Repo |
+|-------|------|
+| Brand, design tokens, UI components | [blackroad-design](https://github.com/BlackRoad-OS-Inc/blackroad-design) |
+| CLI tooling, node bootstrap, operator scripts | [blackroad-operator](https://github.com/BlackRoad-OS-Inc/blackroad-operator) |
+| Gateway routing, auth, rate limiting | This repo |
+
 ---
 © BlackRoad OS, Inc. All rights reserved.

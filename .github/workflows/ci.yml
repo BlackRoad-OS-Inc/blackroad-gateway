@@ -19,12 +19,7 @@ jobs:
         run: npx tsc --noEmit 2>/dev/null || echo "Type check complete"
         continue-on-error: true
       - name: Run gateway tests
-        run: |
-          npx ts-node --esm tests/gateway.test.ts 2>/dev/null || \
-          npx tsx tests/gateway.test.ts 2>/dev/null || \
-          node --loader ts-node/esm tests/gateway.test.ts 2>/dev/null || \
-          echo "Tests compiled - check build artifacts"
-        continue-on-error: true
+        run: npm test
       - name: ✅ Gateway CI complete
         run: echo "Gateway tests finished"
 
