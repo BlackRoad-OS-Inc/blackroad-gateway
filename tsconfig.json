@@ -16,5 +16,5 @@
     "skipLibCheck": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/index.ts", "node_modules", "dist"]
+  "exclude": ["src/index.ts", "src/tasks.ts", "src/ratelimit-node.ts", "src/audit-node.ts", "src/ai-proxy.ts", "node_modules", "dist"]
 }

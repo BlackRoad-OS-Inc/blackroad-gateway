@@ -90,6 +90,81 @@ async function requireAuth(
   return payload;
 }
 
+// ── Provider routing helpers ──────────────────────────────────────────────────
+
+function pickProvider(model: string): "openai" | "anthropic" | "ollama" {
+  if (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3")) return "openai";
+  if (model.startsWith("claude-")) return "anthropic";
+  return "ollama";
+}
+
+async function callProvider(
+  provider: "openai" | "anthropic" | "ollama",
+  body: Record<string, unknown>,
+  env: Env,
+): Promise<Record<string, unknown>> {
+  if (provider === "openai") {
+    const apiKey = env.BLACKROAD_OPENAI_API_KEY;
+    if (!apiKey) throw Object.assign(new Error("OpenAI provider not configured"), { httpStatus: 503 });
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw Object.assign(new Error(`OpenAI error ${res.status}`), { httpStatus: res.status });
+    return res.json() as Promise<Record<string, unknown>>;
+  }
+
+  if (provider === "anthropic") {
+    const apiKey = env.BLACKROAD_ANTHROPIC_API_KEY;
+    if (!apiKey) throw Object.assign(new Error("Anthropic provider not configured"), { httpStatus: 503 });
+
+    const messages = (body.messages as Array<{ role: string; content: string }>) ?? [];
+    let system: string | undefined;
+    const filtered = messages.filter(m => {
+      if (m.role === "system") { system = m.content; return false; }
+      return true;
+    });
+    const anthropicBody: Record<string, unknown> = {
+      model: body.model ?? "claude-3-haiku-20240307",
+      max_tokens: body.max_tokens ?? 1024,
+      messages: filtered,
+      temperature: body.temperature ?? 0.7,
+    };
+    if (system) anthropicBody.system = system;
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify(anthropicBody),
+    });
+    if (!res.ok) throw Object.assign(new Error(`Anthropic error ${res.status}`), { httpStatus: res.status });
+    return res.json() as Promise<Record<string, unknown>>;
+  }
+
+  // ollama
+  const baseUrl = env.BLACKROAD_OLLAMA_URL ?? "http://localhost:11434";
+  const res = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model:   body.model ?? "qwen2.5:3b",
+      messages: body.messages ?? [],
+      stream:  false,
+      options: { temperature: body.temperature ?? 0.7, num_predict: body.max_tokens ?? 2048 },
+    }),
+  });
+  if (!res.ok) throw Object.assign(new Error(`Ollama error ${res.status}`), { httpStatus: res.status });
+  const data = await res.json() as Record<string, unknown>;
+  const msg = (data.message ?? {}) as { role?: string; content?: string };
+  return {
+    id:      `chatcmpl-ollama-${Date.now()}`,
+    object:  "chat.completion",
+    model:   body.model,
+    choices: [{ index: 0, message: { role: msg.role ?? "assistant", content: msg.content ?? "" }, finish_reason: "stop" }],
+  };
+}
+
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
@@ -175,6 +250,65 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       { id: "cipher",  name: "CIPHER",  type: "security", status: "active", model: "llama3.2" },
     ];
     return Response.json({ agents, count: agents.length }, { headers: cors });
+  }
+
+  // ── Models ──────────────────────────────────────
+  if (url.pathname === "/v1/models" && request.method === "GET") {
+    const models = [
+      ...(env.BLACKROAD_OPENAI_API_KEY  ? ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"] : []),
+      ...(env.BLACKROAD_ANTHROPIC_API_KEY ? ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"] : []),
+      ...(env.BLACKROAD_OLLAMA_URL ? ["qwen2.5:7b", "qwen2.5:3b", "llama3.2", "nomic-embed-text"] : []),
+    ];
+    return Response.json(
+      { object: "list", data: models.map(id => ({ id, object: "model" })) },
+      { headers: { ...cors, ...rateLimitHeaders(rl) } },
+    );
+  }
+
+  // ── AI Chat ─────────────────────────────────────
+  if ((url.pathname === "/v1/chat" || url.pathname === "/v1/chat/completions") && request.method === "POST") {
+    const body = await request.json() as Record<string, unknown>;
+    const model    = String(body.model ?? "");
+    const messages = body.messages;
+
+    if (!model) {
+      return Response.json({ error: "bad_request", message: "model is required" }, { status: 400, headers: cors });
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return Response.json({ error: "bad_request", message: "messages must be a non-empty array" }, { status: 400, headers: cors });
+    }
+
+    const provider = pickProvider(model);
+    try {
+      const data = await callProvider(provider, body, env);
+      await logAuditEntry("ai.chat", { agent: String(authPayload.sub ?? ""), model, status: 200, latency_ms: Date.now() - start, kv: env.AUDIT_LOG as KVNamespace | undefined });
+      return Response.json(data, { headers: { ...cors, ...rateLimitHeaders(rl) } });
+    } catch (e: unknown) {
+      const err = e as { message?: string; httpStatus?: number };
+      await logAuditEntry("ai.chat", { agent: String(authPayload.sub ?? ""), model, status: err.httpStatus ?? 502, latency_ms: Date.now() - start, error: err.message, kv: env.AUDIT_LOG as KVNamespace | undefined });
+      return Response.json({ error: "provider_error", message: err.message ?? "Unknown error" }, { status: err.httpStatus ?? 502, headers: cors });
+    }
+  }
+
+  // ── AI Complete ─────────────────────────────────
+  if (url.pathname === "/v1/complete" && request.method === "POST") {
+    const body   = await request.json() as Record<string, unknown>;
+    const model  = String(body.model ?? "qwen2.5:3b");
+    const prompt = String(body.prompt ?? "");
+
+    if (!prompt) {
+      return Response.json({ error: "bad_request", message: "prompt is required" }, { status: 400, headers: cors });
+    }
+
+    const chatBody = { ...body, messages: [{ role: "user", content: prompt }] };
+    const provider = pickProvider(model);
+    try {
+      const data = await callProvider(provider, chatBody, env);
+      return Response.json(data, { headers: { ...cors, ...rateLimitHeaders(rl) } });
+    } catch (e: unknown) {
+      const err = e as { message?: string; httpStatus?: number };
+      return Response.json({ error: "provider_error", message: err.message ?? "Unknown error" }, { status: err.httpStatus ?? 502, headers: cors });
+    }
   }
 
   return Response.json({ error: "Not found" }, { status: 404, headers: cors });

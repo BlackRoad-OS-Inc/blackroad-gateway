@@ -1,25 +1,28 @@
 /**
  * BlackRoad Gateway — Entry Point
  * Tokenless AI provider gateway with task marketplace + PS-SHA∞ memory.
+ * Node.js HTTP server — for Railway / Docker / bare-metal deployments.
  */
 
 import http from "http";
 import { URL } from "url";
-import { RateLimiter } from "./ratelimit.js";
-import { route } from "./routes.js";
-import { taskStore, memoryChain } from "./storage.js";
-import { auditLog } from "./audit.js";
+import { RateLimiter } from "./ratelimit-node.js";
+import { TaskStore, MemoryChain } from "./tasks.js";
+import { logAuditEntry } from "./audit-node.js";
+import { routeAI } from "./ai-proxy.js";
 
 const PORT = parseInt(process.env.BLACKROAD_GATEWAY_PORT ?? "8787");
 const BIND = process.env.BLACKROAD_GATEWAY_BIND ?? "127.0.0.1";
 const limiter = new RateLimiter({ maxRequests: 100, windowMs: 60_000 });
+const taskStore    = new TaskStore();
+const memoryChain  = new MemoryChain();
 
 // ── Request helpers ───────────────────────────────────────────────────────────
 
 function readBody(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", c => chunks.push(c));
+    req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       try { resolve(JSON.parse(Buffer.concat(chunks).toString() || "{}")); }
       catch { resolve({}); }
@@ -41,7 +44,7 @@ function json(res: http.ServerResponse, status: number, data: unknown) {
 
 // ── Server ────────────────────────────────────────────────────────────────────
 
-const server = http.createServer(async (req, res) => {
+const server = http.createServer(async (req: http.IncomingMessage, res: http.ServerResponse) => {
   const url = new URL(req.url ?? "/", `http://localhost`);
   const path = url.pathname;
   const method = req.method ?? "GET";
@@ -98,7 +101,7 @@ const server = http.createServer(async (req, res) => {
     } else if (method === "POST") {
       const body = await readBody(req) as Record<string, unknown>;
       const task = taskStore.add({ title: String(body.title ?? ""), description: String(body.description ?? ""), priority: (body.priority as never) ?? "medium", tags: (body.tags as string[]) ?? [], skills: (body.skills as string[]) ?? [] });
-      await auditLog({ type: "task_created", taskId: task.id, clientId });
+  await logAuditEntry({ type: "task_created", taskId: task.id, clientId });
       json(res, 201, task);
     } else { json(res, 405, { error: "method_not_allowed" }); }
     return;
@@ -113,7 +116,7 @@ const server = http.createServer(async (req, res) => {
       const task = action === "claim"
         ? taskStore.claim(taskId, body.agent ?? "unknown")
         : taskStore.complete(taskId, body.agent ?? "unknown", body.summary ?? "");
-      await auditLog({ type: `task_${action}d`, taskId, agent: body.agent, clientId });
+      await logAuditEntry({ type: `task_${action}d`, taskId, agent: body.agent, clientId });
       json(res, 200, task);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -147,9 +150,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // AI provider proxy (/v1/chat, /v1/generate)
+  // AI provider proxy (/v1/chat, /v1/complete, /v1/models)
   if (path.startsWith("/v1/")) {
-    await route(req, res, url, await readBody(req) as Record<string, unknown>, clientId);
+    await routeAI(req, res, url, await readBody(req) as Record<string, unknown>, clientId);
     return;
   }
 
@@ -161,4 +164,4 @@ server.listen(PORT, BIND, () => {
   console.log(`  Providers: ${[process.env.BLACKROAD_OLLAMA_URL && "ollama", process.env.BLACKROAD_ANTHROPIC_API_KEY && "anthropic", process.env.BLACKROAD_OPENAI_API_KEY && "openai"].filter(Boolean).join(", ") || "none configured"}`);
 });
 
-server.on("error", (err) => { console.error("Gateway error:", err); process.exit(1); });
+server.on("error", (err: Error) => { console.error("Gateway error:", err); process.exit(1); });
