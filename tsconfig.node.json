@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "outDir": "./dist-node",
+    "moduleResolution": "node16",
+    "module": "node16",
+    "esModuleInterop": true
+  },
+  "include": [
+    "src/index.ts",
+    "src/tasks.ts",
+    "src/ratelimit-node.ts",
+    "src/audit-node.ts",
+    "src/ai-proxy.ts"
+  ],
+  "exclude": ["node_modules", "dist", "dist-node"]
+}
