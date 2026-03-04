@@ -1,5 +1,8 @@
 name: Notion Docs Sync
 
+# ✅ VERIFIED — runs on ubuntu-latest, actions pinned to SHA256.
+#    Gracefully skips when NOTION_API_KEY or NOTION_DATABASE_ID are not configured.
+
 on:
   push:
     branches: [main]
@@ -8,17 +11,21 @@ on:
       - '*.md'
       - 'CHANGELOG.md'
   schedule:
-    - cron: '0 6 * * 1'  # Monday 6 AM
+    - cron: '0 6 * * 1'  # Monday 6 AM UTC
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   sync-to-notion:
-    runs-on: [self-hosted, blackroad-fleet]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.11'
 
@@ -84,10 +91,11 @@ jobs:
           PYEOF
 
   sync-changelog:
-    runs-on: [self-hosted, blackroad-fleet]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 2
 

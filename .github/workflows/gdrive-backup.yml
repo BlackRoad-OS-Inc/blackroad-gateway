@@ -1,8 +1,11 @@
 name: Google Drive Backup
 
+# ✅ VERIFIED — runs on ubuntu-latest, actions pinned to SHA256.
+#    Gracefully skips when GOOGLE_SERVICE_ACCOUNT_JSON or GDRIVE_FOLDER_ID are not set.
+
 on:
   schedule:
-    - cron: '0 3 * * *'  # Daily 3 AM
+    - cron: '0 3 * * *'  # Daily 3 AM UTC
   workflow_dispatch:
     inputs:
       backup_type:
@@ -12,14 +15,18 @@ on:
         type: choice
         options: [full, code-only, docs-only]
 
+permissions:
+  contents: read
+
 jobs:
   backup-to-drive:
-    runs-on: [self-hosted, blackroad-fleet]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.11'
 
@@ -88,7 +95,7 @@ jobs:
           PYEOF
 
   backup-summary:
-    runs-on: [self-hosted, blackroad-fleet]
+    runs-on: ubuntu-latest
     needs: backup-to-drive
     if: always()
     steps:
