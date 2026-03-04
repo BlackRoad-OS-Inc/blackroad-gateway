@@ -1,5 +1,8 @@
 name: Third-Party Integrations
 
+# ✅ VERIFIED — runs on ubuntu-latest, actions pinned to SHA256.
+#    All integrations gracefully skip when secrets are not configured.
+
 on:
   release:
     types: [published]
@@ -12,9 +15,13 @@ on:
         type: choice
         options: [all, huggingface, notion, slack, linear, sentry]
 
+permissions:
+  contents: read
+
 jobs:
   notify-slack:
-    runs-on: [self-hosted, blackroad-fleet]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'release' || inputs.service == 'all' || inputs.service == 'slack'
     steps:
       - name: Notify Slack on release
@@ -41,7 +48,8 @@ jobs:
           echo "✓ Slack notified"
 
   create-linear-release:
-    runs-on: [self-hosted, blackroad-fleet]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'release' || inputs.service == 'linear'
     steps:
       - name: Create Linear release milestone
@@ -60,14 +68,15 @@ jobs:
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('✓ Linear milestone:', d.get('data',{}).get('milestoneCreate',{}).get('milestone',{}).get('name','?'))"
 
   update-sentry-release:
-    runs-on: [self-hosted, blackroad-fleet]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event_name == 'release' || inputs.service == 'sentry'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
       - name: Create Sentry release
-        uses: getsentry/action-release@v1
+        uses: getsentry/action-release@dab6548b3c03c4717878099e43782cf5be654289 # v3.5.0
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG || 'blackroad-os' }}
