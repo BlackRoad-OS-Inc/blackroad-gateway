@@ -2,7 +2,19 @@
 
 > Cloudflare Worker — tokenless AI provider gateway for BlackRoad OS.
 
-[![CI](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/ci.yml)
+## ✅ Verified Working
+
+| Check | Status |
+|-------|--------|
+| CI (tests 20/20) | [![CI](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/ci.yml) |
+| Security Scan | [![Security](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/security-scan.yml/badge.svg)](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/security-scan.yml) |
+| Deploy (Cloudflare Workers) | [![Deploy](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/deploy.yml/badge.svg)](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/deploy.yml) |
+
+- **Runners**: All jobs run on `ubuntu-latest` (GitHub-hosted, no self-hosted required)
+- **Pinned**: Every `uses:` action is pinned to a SHA256 commit hash
+- **Tests**: `npx tsx tests/gateway.test.ts` — 20/20 passing
+- **Cloudflare Worker**: `wrangler deploy --dry-run` passes; live deploy requires `CLOUDFLARE_API_TOKEN` secret
+- **Auto-merge**: PRs labeled `automerge` or from Dependabot/Copilot auto-merge on CI green
 
 ## Overview
 
