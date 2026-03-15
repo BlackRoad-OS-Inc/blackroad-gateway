@@ -1,73 +1,41 @@
+<div align="center">
+
+<img src="https://images.blackroad.io/pixel-art/road-logo.png" alt="BlackRoad OS" width="80" />
+
 # blackroad-gateway
 
-> Cloudflare Worker — tokenless AI provider gateway for BlackRoad OS.
+**Cloudflare Worker — tokenless AI provider gateway for BlackRoad OS.**
 
-## ✅ Verified Working
+[![BlackRoad OS](https://img.shields.io/badge/BlackRoad_OS-Pave_Tomorrow-FF2255?style=for-the-badge&labelColor=000000)](https://blackroad.io)
+[![License](https://img.shields.io/badge/License-Proprietary-FF6B2B?style=for-the-badge&labelColor=000000)](./LICENSE)
+[![Edge AI](https://img.shields.io/badge/Edge_AI-52_TOPS-00D4FF?style=for-the-badge&labelColor=000000)](https://github.com/BlackRoad-OS-Inc)
 
-| Check | Status |
-|-------|--------|
-| CI (tests 20/20) | [![CI](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/ci.yml) |
-| Security Scan | [![Security](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/security-scan.yml/badge.svg)](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/security-scan.yml) |
-| Deploy (Cloudflare Workers) | [![Deploy](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/deploy.yml/badge.svg)](https://github.com/BlackRoad-OS-Inc/blackroad-gateway/actions/workflows/deploy.yml) |
+</div>
 
-- **Runners**: All jobs run on `ubuntu-latest` (GitHub-hosted, no self-hosted required)
-- **Pinned**: Every `uses:` action is pinned to a SHA256 commit hash
-- **Tests**: `npx tsx tests/gateway.test.ts` — 20/20 passing
-- **Cloudflare Worker**: `wrangler deploy --dry-run` passes; live deploy requires `CLOUDFLARE_API_TOKEN` secret
-- **Auto-merge**: PRs labeled `automerge` or from Dependabot/Copilot auto-merge on CI green
-
-## Overview
-
-The trust boundary between BlackRoad agents and AI providers. Agents never hold API keys — all provider communication goes through this gateway.
-
-```
-[Any Agent] → [blackroad-gateway] → [OpenAI / Anthropic / Ollama]
-```
-
-Runs as a Cloudflare Worker. All API keys are stored as Cloudflare Secrets.
-
-## Structure
-
-```
-blackroad-gateway/
-├── src/
-│   ├── index.ts          # Worker entry point
-│   ├── router.ts         # Request routing
-│   ├── providers/        # Provider adapters (OpenAI, Anthropic, Ollama)
-│   ├── auth.ts           # Agent authentication
-│   └── policies.ts       # Permission policies
-├── test/                 # Tests
-├── wrangler.toml         # Cloudflare Worker config
-└── .env.example
-```
-
-## Quick Start
-
-```bash
-npm install
-wrangler dev              # Local dev on http://localhost:8787
-wrangler deploy           # Deploy to Cloudflare
-```
-
-## Providers
-
-| Provider | Adapter | Notes |
-|----------|---------|-------|
-| Ollama | `providers/ollama.ts` | Local inference |
-| OpenAI | `providers/openai.ts` | GPT models |
-| Anthropic | `providers/anthropic.ts` | Claude models |
-
-## Security
-
-- API keys stored ONLY as Cloudflare Secrets (`wrangler secret put`)
-- Agent auth via bearer tokens
-- Rate limiting per-agent
-- All traffic logged for audit
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md)
+<div align="center">
+<sub>Part of the <a href="https://blackroad.io">BlackRoad OS</a> ecosystem — sovereign edge AI infrastructure</sub>
+</div>
 
 ---
 
-© BlackRoad OS, Inc. — All rights reserved. Proprietary.
+## Overview
+
+Cloudflare Worker — tokenless AI provider gateway for BlackRoad OS.
+
+## License
+
+**Proprietary** — Copyright © 2024–2026 [BlackRoad OS, Inc.](https://blackroad.io) All rights reserved.
+
+Founder & CEO: **Alexa Louise Amundson** · Delaware C-Corp
+
+See [LICENSE](./LICENSE) for full terms.
+
+---
+
+<div align="center">
+
+**BlackRoad OS — Pave Tomorrow.**
+
+[blackroad.io](https://blackroad.io) · [GitHub](https://github.com/BlackRoad-OS-Inc) · [Brand](https://brand.blackroad.io)
+
+</div>
