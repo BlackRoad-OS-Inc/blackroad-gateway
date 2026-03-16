@@ -1,41 +1,59 @@
 <div align="center">
-
 <img src="https://images.blackroad.io/pixel-art/road-logo.png" alt="BlackRoad OS" width="80" />
 
-# blackroad-gateway
+# BlackRoad Gateway
 
-**Cloudflare Worker — tokenless AI provider gateway for BlackRoad OS.**
+**Tokenless AI provider gateway. Agents never see API keys.**
 
 [![BlackRoad OS](https://img.shields.io/badge/BlackRoad_OS-Pave_Tomorrow-FF2255?style=for-the-badge&labelColor=000000)](https://blackroad.io)
-[![License](https://img.shields.io/badge/License-Proprietary-FF6B2B?style=for-the-badge&labelColor=000000)](./LICENSE)
-[![Edge AI](https://img.shields.io/badge/Edge_AI-52_TOPS-00D4FF?style=for-the-badge&labelColor=000000)](https://github.com/BlackRoad-OS-Inc)
-
-</div>
-
-<div align="center">
-<sub>Part of the <a href="https://blackroad.io">BlackRoad OS</a> ecosystem — sovereign edge AI infrastructure</sub>
 </div>
 
 ---
 
-## Overview
+## Architecture
 
-Cloudflare Worker — tokenless AI provider gateway for BlackRoad OS.
+```
+Agent → Gateway (Cloudflare Worker) → Ollama / Claude / OpenAI / Gemini
+          ↓
+   API keys stored in Worker secrets
+   Agents never touch tokens
+```
 
-## License
+## Why
 
-**Proprietary** — Copyright © 2024–2026 [BlackRoad OS, Inc.](https://blackroad.io) All rights reserved.
+Every AI provider requires API keys. If agents hold keys, keys leak. The gateway holds ALL keys centrally. Agents authenticate via JWT — the gateway routes to the right provider. Zero token exposure.
 
-Founder & CEO: **Alexa Louise Amundson** · Delaware C-Corp
+## Providers
 
-See [LICENSE](./LICENSE) for full terms.
+| Provider | Models | Status |
+|----------|--------|--------|
+| Ollama (local) | 16 models on Cecilia | Primary |
+| Anthropic | Claude 4.5/4.6 | Active |
+| OpenAI | GPT-4o, o3 | Active |
+| Google | Gemini 2.0 Flash | Active |
+
+## API
+
+```bash
+# OpenAI-compatible endpoint
+curl https://gateway.blackroad.io/v1/chat/completions \
+  -H "Authorization: Bearer $AGENT_JWT" \
+  -d '{"model":"mistral","messages":[{"role":"user","content":"hello"}]}'
+
+# Health
+curl https://gateway.blackroad.io/v1/health
+
+# List agents
+curl https://gateway.blackroad.io/v1/agents
+```
+
+## Stack
+
+- Cloudflare Workers (TypeScript)
+- JWT authentication
+- Multi-provider routing
+- Rate limiting per agent
 
 ---
 
-<div align="center">
-
-**BlackRoad OS — Pave Tomorrow.**
-
-[blackroad.io](https://blackroad.io) · [GitHub](https://github.com/BlackRoad-OS-Inc) · [Brand](https://brand.blackroad.io)
-
-</div>
+*Copyright (c) 2024-2026 BlackRoad OS, Inc. All rights reserved.*
